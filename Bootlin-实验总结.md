@@ -16,7 +16,7 @@ mindmap
       module_init/module_exit
       module_param/sysfs
       ktime_get_seconds/时间统计
-      utsname()->release/运行时版本
+      utsname（）->release/运行时版本
     02-Describing Hardware
       设备树 &label 覆盖语法
       /delete-property/ 删除继承属性
