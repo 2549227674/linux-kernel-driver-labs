@@ -15,7 +15,7 @@ mindmap
       双遍 Makefile 编译原理
       module_param sysfs 导出
       ktime_get_seconds 运行时统计
-      utsname()->release 内核版本
+      utsname（）->release 内核版本
     02-Describing Hardware
       &{/leds} 节点覆盖
       &led0 心跳灯配置
