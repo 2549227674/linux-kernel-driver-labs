@@ -1,4 +1,4 @@
-# DMA Engine and UART TX with SDMA
+# DMA
 
 ## 实验目标
 

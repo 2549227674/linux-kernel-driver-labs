@@ -1,4 +1,4 @@
-# Describing Hardware with Device Tree
+# Describing Hardware Devices
 
 ## 实验目标
 
