@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * imx6ull-100ask-custom.dts - Custom Device Tree for Bootlin Training
+ *
+ * Demonstrates:
+ * - Device tree node overriding via &label syntax
+ * - GPIO LED control via /leds node
+ * - I2C device declaration (MPU6500) in &i2c1
+ * - interrupt-parent and IRQ_TYPE_EDGE_RISING for GPIO interrupts
+ *
+ * Compile: make dtbs (from Linux kernel source root)
+ * Deploy:  adb push arch/arm/boot/dts/imx6ull-100ask-custom.dtb /boot/
+ *
+ * Author: Han
+ * Course: Bootlin Embedded Linux Kernel/Driver Development
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/interrupt-controller/irq.h>
+#include "100ask_imx6ull-14x14.dts"
+
+/ {
+    model = "Training i.MX6ULL by Han";
+};
+
+/* Drive the user LED */
+&{/leds} {
+    status = "okay";
+};
+
+&led0 {
+    linux,default-trigger = "heartbeat";
+    default-state = "on";
+};
+
+/* Declare MPU6500 on I2C1 bus */
+&i2c1 {
+    mpu6500@68 {
+        /*
+         * Compatible string must match the official driver
+         * so that the kernel's inv-mpu6050-i2c driver can bind.
+         */
+        compatible = "invensense,mpu6500";
+        reg = <0x68>;
+
+        /*
+         * Fake interrupt: gpio2 pin 0 is used as a logical placeholder.
+         * Required by the driver even though this polling config doesn't use it.
+         */
+        interrupt-parent = <&gpio2>;
+        interrupts = <0 IRQ_TYPE_EDGE_RISING>;
+    };
+};

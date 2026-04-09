@@ -1,0 +1,24 @@
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod.c
+*.mod
+*.cmd
+*.d
+
+# Module symvers (exported symbols)
+Module.symvers
+modules.order
+
+# Build logs
+*.log
+
+# Editor and OS artifacts
+*.swp
+*~
+*.tmp
+*.bak
+*.DS_Store
+
+# Local kernel source override
+vmlinux

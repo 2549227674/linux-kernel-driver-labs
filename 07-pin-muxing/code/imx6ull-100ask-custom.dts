@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * imx6ull-100ask-custom.dts - Custom Device Tree with I2C Pin Muxing
+ *
+ * Demonstrates:
+ * - Pin multiplexing via pinctrl subsystem (NXP i.MX6ULL-specific)
+ * - Two-level pinctrl node structure (NXP driver requirement: container + group)
+ * - I2C1 on CSI pins (non-standard: CSI_PIXCLK/SCL, CSI_MCLK/SDA)
+ * - Conflict resolution: disabling UART6 which shares CSI pins
+ * - /delete-property/ syntax to remove inherited DTS settings
+ *
+ * Key electrical note:
+ *   I2C requires open-drain drivers. The pad config 0x4001b8b1 enables
+ *   open-drain + internal pull-up, which is correct for I2C.
+ *
+ * Author: Han
+ * Course: Bootlin Embedded Linux Kernel/Driver Development
+ */
+
+/dts-v1/;
+
+#include "100ask_imx6ull-14x14.dts"
+
+/ {
+    model = "Training i.MX6ULL by Han - PinMux Project";
+    compatible = "fsl,imx6ull-14x14-evk", "fsl,imx6ull";
+};
+
+/* Pin multiplexing configuration */
+&iomuxc {
+    /*
+     * NXP pinctrl driver requires a two-level structure:
+     * container_node -> actual_pin_group
+     * Without the container, the driver returns -EINVAL.
+     */
+    my_board_grp {
+        pinctrl_my_i2c1: my_i2c1grp {
+            fsl,pins = <
+                /*
+                 * Signal: I2C1_SCL | Physical pin: CSI_PIXCLK (ALT3)
+                 * Pad config: 0x4001b8b1 enables open-drain + pull-up (I2C-safe)
+                 */
+                MX6UL_PAD_CSI_PIXCLK__I2C1_SCL   0x4001b8b1
+
+                /* Signal: I2C1_SDA | Physical pin: CSI_MCLK (ALT3) */
+                MX6UL_PAD_CSI_MCLK__I2C1_SDA     0x4001b8b1
+            >;
+        };
+    };
+};
+
+/* Release CSI pins from UART6 (conflicts with our I2C1 use) */
+&uart6 {
+    status = "disabled";
+};
+
+/* I2C1 controller with custom pin assignment and MPU6500 */
+&i2c1 {
+    /*
+     * Delete the inherited pinctrl properties from base DTS.
+     * If not deleted, the kernel may attempt to apply conflicting
+     * pad configurations, causing -EINVAL errors.
+     */
+    /delete-property/ pinctrl-names;
+    /delete-property/ pinctrl-0;
+
+    /* Apply our custom CSI pin group */
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_my_i2c1>;
+    clock-frequency = <100000>;
+    status = "okay";
+
+    /* MPU6500 6-axis IMU at I2C address 0x68 */
+    mpu6500@68 {
+        compatible = "invensense,mpu6500";
+        /* reg must be in hex: 0x68 = 104 decimal = AD0 grounded */
+        reg = <0x68>;
+
+        /*
+         * Interrupt line: GPIO2_IO00, rising edge triggered.
+         * Required by inv-mpu6050 kernel driver even in polling mode.
+         */
+        interrupt-parent = <&gpio2>;
+        interrupts = <0 2>;  /* GPIO2 pin 0, IRQ_TYPE_EDGE_FALLING */
+
+        mount-matrix = "1, 0, 0",
+                       "0, 1, 0",
+                       "0, 0, 1";
+    };
+};
