@@ -17,7 +17,7 @@ mindmap
       ktime_get_seconds 运行时统计
       utsname（）->release 内核版本
     02-Describing Hardware
-      &{/leds} 节点覆盖
+      &（/leds） 节点覆盖
       &led0 心跳灯配置
       &i2c1 mpu6500@68 声明
       interrupt-parent GPIO 中断
