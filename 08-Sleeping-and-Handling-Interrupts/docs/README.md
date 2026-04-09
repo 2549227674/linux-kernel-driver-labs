@@ -1,4 +1,4 @@
-# Interrupt Handler and Sleep / Wait Queue
+# Sleeping and Handling Interrupts
 
 ## 实验目标
 

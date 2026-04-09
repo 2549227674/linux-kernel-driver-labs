@@ -1,4 +1,4 @@
-# Accessing I/O Registers and UART Devices
+# Accessing I/O Memory and Ports
 
 ## 实验目标
 

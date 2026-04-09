@@ -1,4 +1,4 @@
-# Pin Multiplexing and Pinctrl Subsystem
+# Configuring Pin Multiplexing
 
 ## 实验目标
 
