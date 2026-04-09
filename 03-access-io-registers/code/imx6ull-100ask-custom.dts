@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * imx6ull-100ask-custom.dts - Custom device tree overlay for i.MX6ULL
+ *
+ * Demonstrates:
+ * - Pin multiplexing (pinctrl) for UART4 TX/RX pins
+ * - Device node overriding with custom compatible string
+ * - Pin muxing conflict resolution (disable UART6 which shares pins)
+ *
+ * Author: Han
+ * Course: Bootlin Embedded Linux Kernel/Driver Development
+ */
+
+/dts-v1/;
+
+#include "100ask_imx6ull-14x14.dts"
+
+/ {
+    model = "Training i.MX6ULL by Han - Custom V1";
+};
+
+&iomuxc {
+    my_board_grp {
+        pinctrl_my_i2c1: my_i2c1grp {
+            fsl,pins = <
+                MX6UL_PAD_CSI_PIXCLK__I2C1_SCL 0x4001b8b1
+                MX6UL_PAD_CSI_MCLK__I2C1_SDA   0x4001b8b1
+            >;
+        };
+
+        pinctrl_custom_uart4: custom_uart4grp {
+            fsl,pins = <
+                MX6UL_PAD_UART4_TX_DATA__UART4_DCE_TX 0x1b0b1
+                MX6UL_PAD_UART4_RX_DATA__UART4_DCE_RX 0x1b0b1
+            >;
+        };
+    };
+};
+
+&i2c1 {
+    /delete-property/ pinctrl-names;
+    /delete-property/ pinctrl-0;
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_my_i2c1>;
+    clock-frequency = <100000>;
+    status = "okay";
+};
+
+&uart4 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_custom_uart4>;
+    compatible = "my,custom-uart";
+    status = "okay";
+};
+
+&uart6 {
+    status = "disabled";
+};
