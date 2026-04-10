@@ -47,13 +47,20 @@ ssize_t my_uart_read(struct file *file, char __user *buf, ...) {
 }
 ```
 
+## 代码说明
+
+| 文件 | 说明 |
+|------|------|
+| `code/custom_uart.c` | 完整驱动源码（含自旋锁、ISR + Ring Buffer + Wait Queue） |
+| `code/Makefile` | Out-of-tree 构建脚本 |
+
 ## 真实实现参考
 
-| 保护对象 | 实验 | 文件 |
-|---------|------|------|
-| ISR 与 read/write 之间的 rx_buf / buf_wr / buf_rd | 08 | `custom_uart.c` |
-| DMA 与 PIO write 之间的 tx_ongoing 标志 | 10 | `custom_uart_dma.c` |
-| ioctl 中的 tx_count | 08 | `custom_uart.c` |
+| 保护对象 | 文件 | 锁类型 |
+|---------|------|---------|
+| ISR 中的 `rx_buf` / `buf_wr` | `code/custom_uart.c` | `spin_lock` |
+| `read` 中的 `rx_buf` / `buf_rd` | `code/custom_uart.c` | `spin_lock_irqsave` |
+| `write` / `ioctl` 中的 `tx_count` | `code/custom_uart.c` | `spin_lock_irqsave` |
 
 ## 关键原则
 

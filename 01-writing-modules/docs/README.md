@@ -13,6 +13,43 @@
 - `ktime_get_seconds()` / `time64_t` 时间统计
 - `utsname()->release` 获取运行时内核版本
 
+## 代码结构图解
+
+### 模块生命周期
+
+```mermaid
+graph LR
+    A["insmod<br>加载模块"] --> B["module_init<br>初始化函数"]
+    B --> C["模块运行中<br>可响应参数/sysfs"]
+    C --> D["rmmod<br>卸载模块"]
+    D --> E["module_exit<br>退出函数"]
+```
+
+### Out-of-tree 双遍 Makefile 编译流程
+
+```mermaid
+graph LR
+    A["终端: make"] --> B["KERNELRELEASE = 空<br>执行外层 Makefile"]
+    B --> C["make -C $(KDIR)<br>M=$(PWD) modules"]
+    C --> D["内核 Makefile 递归调用"]
+    D --> E["KERNELRELEASE 已定义<br>识别 obj-m += hello"]
+    E --> F["Kbuild 编译 .ko"]
+    F --> G["返回当前目录<br>生成 hello_version.ko"]
+```
+
+### 模块参数 Sysfs 导出路径
+
+```mermaid
+graph TD
+    A["module_param(whom, charp, 0644)"] --> B["/sys/module/"]
+    B --> C["hello_version/"]
+    B --> D["parameters/"]
+    C --> E["parameters/whom"]
+    D --> E
+    E --> F["echo Han > whom<br>运行时修改"]
+    E --> G["cat whom<br>查看当前值"]
+```
+
 ## 代码说明
 
 | 文件 | 说明 |
@@ -69,6 +106,16 @@ adb shell dmesg | tail
 
 ## 关键设计
 
-- `time64_t` 类型：防止 Y2038 问题（32位平台）
-- `(long long)` 强转 + `%lld`：跨架构打印兼容性
-- `GFP_KERNEL` 分配：`kzalloc` 可休眠，不可在原子上下文使用
+```mermaid
+graph LR
+    subgraph "数据类型"
+        A["time64_t"] --> B["防止 Y2038 问题"]
+        C["long long + %lld"] --> D["跨架构打印兼容"]
+    end
+```
+
+| 设计点 | 说明 |
+|--------|------|
+| `time64_t` | 64 位时间戳，防止 32 位平台 Y2038 溢出 |
+| `(long long)` + `%lld` | 强制 64 位打印，兼容 32/64 位架构 |
+| `utsname()->release` | **运行时**获取内核版本，不可用编译期宏 |
