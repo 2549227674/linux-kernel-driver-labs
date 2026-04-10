@@ -10,18 +10,61 @@ i.MX6ULL 嵌入式 Linux 内核驱动实验，共 10 个实验，覆盖内核模
 
 ## 实验索引
 
-| # | 实验名称 | 核心知识点 |
-|---|----------|------------|
-| 01 | [Writing Kernel Modules](01-writing-modules/) | 模块参数、module_init/exit、GPL 符号导出、ktime 时间统计 |
-| 02 | [Describing Hardware Devices](02-Describing-Hardware-Devices/) | &label 节点覆盖、GPIO LED、interrupt-parent、IRQ_TYPE |
-| 03 | [Configuring Pin Multiplexing](03-Configuring-Pin-Muxing/) | 两级 pinctrl 结构、开漏 pad 配置、SION 位、/delete-property/ |
-| 04 | [Using the I2C Bus](04-Using-the-I2C-Bus/) | i2c_driver、i2c_transfer burst read、WHO_AM_I 验证、Big-Endian |
-| 05 | [Input Interface](05-Input-Interface/) | input_polled_dev、EV_ABS、input_report_abs/input_sync |
-| 06 | [Accessing I/O Memory and Ports](06-Accessing-IO-Memory-and-Ports/) | ioremap、时钟框架、UART 寄存器、波特率公式、cpu_relax 超时保护 |
-| 07 | [Output-only Misc Driver](07-Output-only-Misc-Driver/) | Misc 设备框架、file_operations、container_of、copy_from_user、ioctl |
-| 08 | [Sleeping and Handling Interrupts](08-Sleeping-and-Handling-Interrupts/) | devm_request_irq、ISR、Ring Buffer、wait_event_interruptible |
-| 09 | [Locking](09-Locking/) | spin_lock/spin_lock_irqsave、原子上下文规则、三明治原则 |
-| 10 | [DMA](10-DMA/) | dmaengine API、dma_map_resource、Completion 同步、EPROBE_DEFER、PIO 回退 |
+| # | 实验名称 | 核心知识点 | 状态 |
+|---|----------|------------|------|
+| 01 | [Writing Kernel Modules](01-writing-modules/) | 模块参数、module_init/exit、GPL 符号导出、ktime 时间统计 | ✅ |
+| 02 | [Describing Hardware Devices](02-Describing-Hardware-Devices/) | &label 节点覆盖、GPIO LED、interrupt-parent、IRQ_TYPE | ✅ |
+| 03 | [Configuring Pin Multiplexing](03-Configuring-Pin-Muxing/) | 两级 pinctrl 结构、开漏 pad 配置、SION 位、/delete-property/ | ✅ |
+| 04 | [Using the I2C Bus](04-Using-the-I2C-Bus/) | i2c_driver、i2c_transfer burst read、WHO_AM_I 验证、Big-Endian | ✅ |
+| 05 | [Input Interface](05-Input-Interface/) | input_polled_dev、EV_ABS、input_report_abs/input_sync | ✅ |
+| 06 | [Accessing I/O Memory and Ports](06-Accessing-IO-Memory-and-Ports/) | ioremap、时钟框架、UART 寄存器、波特率公式、cpu_relax 超时保护 | ✅ |
+| 07 | [Output-only Misc Driver](07-Output-only-Misc-Driver/) | Misc 设备框架、file_operations、container_of、copy_from_user、ioctl | ✅ |
+| 08 | [Sleeping and Handling Interrupts](08-Sleeping-and-Handling-Interrupts/) | devm_request_irq、ISR、Ring Buffer、wait_event_interruptible | ✅ |
+| 09 | [Locking](09-Locking/) | spin_lock/spin_lock_irqsave、原子上下文规则、三明治原则 | ✅ |
+| 10 | [DMA](10-DMA/) | dmaengine API、dma_map_resource、Completion 同步、EPROBE_DEFER、PIO 回退 | ✅ |
+
+---
+
+## 知识演进路线
+
+```mermaid
+graph TD
+    subgraph "基础"
+        A["01 模块编写<br>Out-of-tree 编译"]
+    end
+    subgraph "硬件描述"
+        B["02 设备树覆盖<br>&label 语法"]
+        C["03 引脚复用<br>pinctrl 两级结构"]
+    end
+    subgraph "总线驱动"
+        D["04 I2C 总线<br>i2c_driver + burst read"]
+        E["05 Input 子系统<br>polled_dev 框架"]
+    end
+    subgraph "内存映射 I/O"
+        F["06 寄存器编程<br>ioremap + 时钟框架"]
+    end
+    subgraph "字符设备"
+        G["07 Misc 驱动<br>container_of + fops"]
+        H["08 中断 + 休眠<br>ISR + Ring Buffer + Wait Queue"]
+    end
+    subgraph "并发保护"
+        I["09 自旋锁<br>spin_lock + 三明治原则"]
+    end
+    subgraph "DMA 引擎"
+        J["10 SDMA<br>dmaengine + Cache 一致性"]
+    end
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    B --> F
+    F --> G
+    G --> H
+    H --> I
+    H --> J
+    F -.-> J
+```
 
 ---
 
@@ -31,7 +74,7 @@ i.MX6ULL 嵌入式 Linux 内核驱动实验，共 10 个实验，覆盖内核模
 linux-kernel-driver-labs/
 ├── 01-writing-modules/
 │   ├── code/          # 驱动源码 + Makefile
-│   ├── docs/          # 实验文档
+│   ├── docs/          # 实验文档（含 Mermaid 图解）
 │   └── assets/        # 截图/照片
 ├── 02-Describing-Hardware-Devices/
 ├── 03-Configuring-Pin-Muxing/
@@ -62,28 +105,6 @@ make
 
 # 设备树编译（实验 02/03）
 make dtbs
-```
-
----
-
-## 实验依赖关系
-
-```
-01-writing-modules
-       ↓
-02-describing-hardware     03-pin-muxing
-       ↓                        ↓
-04-using-i2c-bus ----→ 05-input-interface
-       ↓
-06-accessing-io-memory
-       ↓
-07-output-misc-driver
-       ↓
-08-sleeping-interrupts
-       ↓                  ←←←←←←←←←┘
-09-locking          (spinlock 概念嵌入)
-       ↓
-10-dma
 ```
 
 ---
