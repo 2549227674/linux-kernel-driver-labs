@@ -20,6 +20,17 @@
 |------|------|
 | `code/imx6ull-100ask-custom.dts` | 设备树片段（覆盖 LED + 声明 MPU6500） |
 
+## 内核 Makefile 追加
+
+**`arch/arm/boot/dts/Makefile`**（在 `dtb-$(CONFIG_SOC_IMX6ULL)` 列表中追加）：
+```makefile
+dtb-$(CONFIG_SOC_IMX6ULL) += \
+    100ask_imx6ull-14x14.dtb \
+    imx6ull-100ask-custom.dtb \   # <-- 追加此行
+```
+
+> 注：若 `make dtbs` 后未生成 `.dtb` 文件，先检查是否已追加此行。
+
 ## 设备树关键修改
 
 ```dts

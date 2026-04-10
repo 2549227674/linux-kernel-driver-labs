@@ -1,0 +1,15 @@
+# Kconfig — 内核配置选项（树内编译用）
+
+路径：`drivers/misc/Kconfig`
+位置：在 `endif # MISC_DEVICES` 之前插入以下内容：
+
+```kconfig
+config HELLO_VERSION
+    tristate "Hello Version Module (Bootlin Lab)"
+    ---help---
+      This is a simple hello world module with parameters and time tracking
+      developed during the Bootlin Embedded Linux training.
+
+      To compile this driver as a module, choose M here: the
+      module will be called hello_version.
+```

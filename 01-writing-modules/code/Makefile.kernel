@@ -1,0 +1,10 @@
+# Makefile.kernel — 内核源码追加（树内编译用）
+
+路径：`drivers/misc/Makefile`
+位置：追加以下一行：
+
+```makefile
+obj-$(CONFIG_HELLO_VERSION) += hello_version.o
+```
+
+> 树内编译完成后，在内核源码根目录执行 `make modules` 即可编译此模块。

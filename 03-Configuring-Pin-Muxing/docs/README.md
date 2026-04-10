@@ -21,6 +21,13 @@
 | `code/imx6ull-100ask-custom.dts` | 完整设备树（两级 pinctrl + CSI I2C1 + MPU6500） |
 | `code/mpu_monitor.sh` | IIO Sysfs 自动检测 + 加速度数据监控脚本 |
 
+## 内核 Makefile 追加
+
+**`arch/arm/boot/dts/Makefile`**（在 `dtb-$(CONFIG_SOC_IMX6ULL)` 列表中追加）：
+```makefile
+imx6ull-100ask-custom.dtb \
+```
+
 ## 设备树关键修改
 
 ```dts

@@ -19,6 +19,26 @@
 |------|------|
 | `code/hello_version.c` | 内核模块源码 |
 | `code/Makefile` | Out-of-tree 构建脚本 |
+| `code/Kconfig` | 内核配置选项（树内编译时使用） |
+| `code/Makefile.kernel` | 内核源码 `drivers/misc/Makefile` 追加行 |
+
+> 注：Kconfig 和 Makefile.kernel 为**树内编译**（In-tree）方式所需。Out-of-tree 编译只需 `hello_version.c` 和 `code/Makefile`。
+
+## 树内编译追加内容
+
+**`drivers/misc/Kconfig`**（在 `endif # MISC_DEVICES` 之前插入）：
+```kconfig
+config HELLO_VERSION
+    tristate "Hello Version Module (Bootlin Lab)"
+    ---help---
+      This is a simple hello world module with parameters and time tracking
+      developed during the Bootlin Embedded Linux training.
+```
+
+**`drivers/misc/Makefile`**（追加一行）：
+```makefile
+obj-$(CONFIG_HELLO_VERSION) += hello_version.o
+```
 
 ## 构建与运行
 
