@@ -2,7 +2,7 @@
 
 ## 实验目标
 
-通过修改设备树，在现有硬件描述中声明 MPU6500 加速度计和配置用户 LED，验证 Device Tree 节点覆盖（&label 语法）和 GPIO/中断属性。
+通过修改设备树，在现有硬件描述中声明 MPU6500 加速度计和配置用户 LED，验证 Device Tree `&label` 覆盖语法和 GPIO/中断属性。
 
 ## 知识点
 
@@ -12,7 +12,40 @@
 - I2C 子设备声明：`mpu6500@68` 子节点，`reg = <0x68>`
 - `interrupt-parent` / `interrupts`：GPIO 中断配置
 - `IRQ_TYPE_EDGE_RISING` / `IRQ_TYPE_EDGE_FALLING`：中断触发边沿
-- `#include <dt-bindings/interrupt-controller/irq.h>`：IRQ 常量头文件
+
+## 代码结构图解
+
+### 设备树覆盖原理
+
+```mermaid
+graph TD
+    A["100ask_imx6ull-14x14.dts<br>（原厂基础 DTS）"] --> B["包含 #include"]
+    B --> C["所有外设节点<br>leds / i2c1 / ... 原始定义"]
+    C --> D["imx6ull-100ask-custom.dts<br>（覆盖层）"]
+    D --> E["&led0<br>覆盖心跳灯触发器"]
+    D --> F["&{/leds}<br>启用 LED 节点"]
+    D --> G["&i2c1 → mpu6500@68<br>添加 I2C 从设备"]
+```
+
+### LED 节点覆盖流程
+
+```mermaid
+graph LR
+    A["&{/leds}"] --> B["status = \"okay\""]
+    C["&led0"] --> D["linux,default-trigger<br>= \"heartbeat\""]
+    C --> E["default-state<br>= \"on\""]
+```
+
+### MPU6500 设备树节点解析
+
+```mermaid
+graph TD
+    A["&i2c1"] --> B["mpu6500@68"]
+    B --> C["compatible<br>= \"invensense,mpu6500\""]
+    B --> D["reg = <0x68><br>I2C 从机地址"]
+    B --> E["interrupt-parent = <&gpio2><br>GPIO2 作为中断控制器"]
+    E --> F["interrupts = <0<br>IRQ_TYPE_EDGE_RISING><br>GPIO2 第 0 号引脚<br>上升沿触发"]
+```
 
 ## 代码说明
 
@@ -79,7 +112,17 @@ adb shell i2cdetect -y 1
 
 ## 关键设计
 
-- `compatible = "invensense,mpu6500"`：匹配内核内置 `inv-mpu6050-i2c` 驱动，无需自己写驱动
-- `reg = <0x68>`：I2C 从机地址，0x68 = AD0 引脚接地时的地址（十进制 104）
-- `interrupt-parent = <&gpio2>`：指定中断控制器为 GPIO2
-- `interrupts = <0 IRQ_TYPE_EDGE_RISING>`：GPIO2 的第 0 号引脚，上升沿触发
+| 设计点 | 说明 |
+|--------|------|
+| `compatible = "invensense,mpu6500"` | 匹配内核内置 `inv-mpu6050-i2c` 驱动，无需自写驱动 |
+| `reg = <0x68>` | I2C 从机地址：0x68 = 十进制 104 = AD0 接地 |
+| `interrupt-parent = <&gpio2>` | 指定 GPIO2 作为中断控制器 |
+| `interrupts = <0 IRQ_TYPE_EDGE_RISING>` | GPIO2 第 0 号引脚，上升沿触发 |
+
+```mermaid
+graph LR
+    A["i2cdetect -y 1"] --> B{"0x68 显示?"}
+    B -->|"UU"| C["驱动已绑定<br>正常"]
+    B -->|"--"| D["设备树/驱动未就绪"]
+    B -->|"XX"| E["I2C 总线异常"]
+```
