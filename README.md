@@ -5,6 +5,63 @@
 
 ---
 
+## 课程全景知识图谱
+
+```mermaid
+mindmap
+  root((Bootlin 驱动课程))
+    01-Writing Modules
+      双遍 Makefile 编译原理
+      module_param sysfs 导出
+      ktime_get_seconds 运行时统计
+      utsname()->release 内核版本
+    02-Describing Hardware
+      &(/)leds 节点覆盖
+      &led0 心跳灯配置
+      &i2c1 mpu6500@68 声明
+      interrupt-parent GPIO 中断
+    03-Pin Multiplexing
+      pinctrl 两级节点结构
+      0x4001b8b1 开漏 pad 配置
+      CSI I2C1 SCL/SDA 复用
+      /delete-property/ 删除继承
+    04-Using I2C Bus
+      i2c_driver probe/remove 模型
+      i2c_transfer burst read 两消息协议
+      WHO_AM_I 寄存器验证
+      Big-Endian 数据组装
+    05-Input Interface
+      input_polled_dev 轮询框架
+      EV_ABS 绝对坐标事件
+      Bridge: I2C 物理层 → input 逻辑层
+    06-Accessing IO Memory
+      devm_ioremap_resource 内存映射
+      时钟框架 clk_prepare_enable
+      波特率公式 UBIR/UBMR
+      cpu_relax 超时保护
+    07-Output Misc Driver
+      misc_register 动态设备号
+      container_of 反向追溯
+      \n → \r\n 换行转义
+    08-Sleeping Interrupts
+      devm_request_irq ISR 注册
+      ISR + Ring Buffer 生产者/消费者
+      wait_event_interruptible 阻塞
+      UCR3_RXDMUXSEL 硬件 quirk
+    09-Locking
+      spin_lock_irqsave vs spin_lock
+      持锁禁止休眠规则
+      三明治原则
+    10-DMA
+      dma_request_chan SDMA 通道
+      dma_map_resource FIFO 地址
+      dma_map_single Cache 同步
+      tx_ongoing 防竞争标志
+      EPROBE_DEFER / PIO 回退
+```
+
+---
+
 ## 实验索引
 
 | # | 实验名称 | 核心知识点 | 状态 |
@@ -166,6 +223,26 @@ MPU6500 输出: data[0]=0x01, data[1]=0xA3
 必须按:      (data[0] << 8) | data[1] ✓
 ```
 
+**WHO_AM_I 验证流程：**
+
+```mermaid
+graph LR
+    A["读 0x75 寄存器"] --> B{"返回值 == 0x70?"}
+    B -->|是| C["设备 ID 正确，继续初始化"]
+    B -->|否| D["return -ENODEV<br>驱动不绑定此设备"]
+```
+
+**i2cdetect 结果解读：**
+
+| 显示 | 含义 |
+|------|------|
+| `--` | 无设备响应此地址 |
+| `00`–`6F` | 确认存在 I2C 从机 |
+| `UU` | **有驱动占用**，设备正被内核驱动管理（正常） |
+| `XX` | 检测到设备但响应异常 |
+
+实验中 MPU6500 地址 `0x68` 正确注册后显示 `UU`。
+
 ---
 
 ### 05 — Input Interface（input_polled_dev 桥接层）
@@ -190,7 +267,8 @@ input_sync()                          帧结束标志
 ```
 
 - `poll_interval = 50` → 50ms = 20Hz，内核工作队列调度
-- `input_set_abs_params(input, ABS_X, -32768, 32767, 8, 0)` → 定义轴范围
+- `devm_*` 函数 → 设备 remove 时自动释放，无需手动 cleanup
+- `input_set_abs_params(input, ABS_X, -32768, 32767, 8, 0)` → 定义轴范围，驱动事件规范化
 
 ---
 
@@ -238,6 +316,14 @@ struct my_uart_dev *dev = container_of(file->private_data,
                                          struct my_uart_dev, miscdev);
 ```
 
+**write 数据流：**
+
+```
+用户空间 buf → copy_from_user → \n → \r\n 换行转义 → my_uart_putc 轮询发送 → UART TX FIFO
+```
+
+> 串口协议要求 `\r\n`，用户输入通常只有 `\n`，驱动层必须做转换
+
 **put_user vs copy_to_user：**
 
 | API | 适用场景 | 重量 |
@@ -268,6 +354,17 @@ graph TB
     end
     ISR2 -->|共享 rx_buf| READ2
     ISR4 -->|唤醒等待队列| READ1
+```
+
+**环形缓冲区原理：**
+
+```
+SERIAL_BUFSIZE = 32
+
+写指针: buf_wr（ISR 更新）
+读指针: buf_rd（read 更新）
+空条件: buf_rd == buf_wr
+满条件: (buf_wr + 1) % SIZE == buf_rd
 ```
 
 **自旋锁保护表：**
@@ -483,6 +580,63 @@ graph BT
 
 ## 快速参考
 
+### 核心知识点速查
+
+#### 5.1 模块与内核
+
+| API | 关键点 |
+|-----|--------|
+| `module_init/exit` | 声明入口/退出 |
+| `module_param` | sysfs 参数（`/sys/module/.../parameters/`） |
+| `ktime_get_seconds()` | Y2038 安全时间统计 |
+| `utsname()->release` | 运行时获取内核版本 |
+
+#### 5.2 设备树
+
+| 语法 | 含义 |
+|------|------|
+| `&label` | 覆盖已有节点 |
+| `&{/path}` | 按路径引用 |
+| `/delete-property/` | 删除继承属性 |
+| `interrupt-parent` | 指定中断控制器 |
+| `status = "disabled"` | 禁用节点释放引脚 |
+
+#### 5.3 中断与锁
+
+| 场景 | 锁类型 |
+|------|--------|
+| ISR 内 | `spin_lock` |
+| 进程上下文（与 ISR 共用资源） | `spin_lock_irqsave` |
+| 持锁期间 | 禁止 `GFP_KERNEL`/`copy_*_user` 等可休眠调用 |
+
+#### 5.4 I2C 与 Pin Muxing
+
+| 概念 | 关键点 |
+|------|--------|
+| `i2c_driver` | probe/remove 模型 |
+| `i2c_transfer` | 两消息 burst read |
+| 两级 pinctrl | `container → group`（NXP 专用要求） |
+| `0x4001b8b1` | SION+ODE+PKE+PUE+HYS，开漏上拉 |
+
+#### 5.5 Input 子系统
+
+| API | 含义 |
+|-----|------|
+| `input_allocate_polled_device` | 分配轮询输入设备 |
+| `poll_interval = 50` | 50ms = 20Hz |
+| `EV_ABS` | 绝对坐标事件 |
+| `input_sync` | 帧结束标志 |
+
+#### 5.6 DMA 与 Cache
+
+| API | 含义 |
+|-----|------|
+| `dma_request_chan` | 申请 DMA 通道 |
+| `dmaengine_slave_config` | 配置传输参数 |
+| `dma_map_single` | 流式映射 + Cache Clean |
+| `reinit_completion` | 每次 DMA 前必须重置 |
+| `EPROBE_DEFER` | DMA 控制器未就绪，延迟探测 |
+
 ### 自旋锁使用规则
 
 | 上下文 | 锁类型 | 可休眠？ |
@@ -492,17 +646,6 @@ graph BT
 | 进程上下文（无 ISR） | `spin_lock` | ❌ |
 
 ### 中断与锁
-
-### i2cdetect 结果解读
-
-| 显示 | 含义 |
-|------|------|
-| `--` | 无设备响应此地址 |
-| `00`–`6F` | 确认存在 I2C 从机 |
-| `UU` | **有驱动占用**，设备正被内核驱动管理（正常） |
-| `XX` | 检测到设备但响应异常 |
-
-实验中 MPU6500 地址 `0x68` 正确注册后显示 `UU`。
 
 ---
 
