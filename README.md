@@ -1,10 +1,7 @@
 # linux-kernel-driver-labs
 
-i.MX6ULL 嵌入式 Linux 内核驱动实验，共 10 个实验，覆盖内核模块编写、设备树、I2C 驱动、输入子系统、内存映射 I/O、字符设备、中断处理、锁机制和 DMA 引擎。
-
-**硬件平台**：NXP i.MX6ULL (ARM Cortex-A7) + 100ask 开发板
-**内核版本**：Linux 4.9.88
-**工具链**：arm-linux-gnueabihf-gcc
+> i.MX6ULL 嵌入式 Linux 内核驱动实验 | 硬件平台：NXP i.MX6ULL (100ask Pro) | 内核版本：Linux 4.9.88
+> **所有内容基于本人实际编写的代码，非 Bootlin 原版示例**
 
 ---
 
@@ -12,15 +9,15 @@ i.MX6ULL 嵌入式 Linux 内核驱动实验，共 10 个实验，覆盖内核模
 
 | # | 实验名称 | 核心知识点 | 状态 |
 |---|----------|------------|------|
-| 01 | [Writing Kernel Modules](01-writing-modules/) | 模块参数、module_init/exit、GPL 符号导出、ktime 时间统计 | ✅ |
-| 02 | [Describing Hardware Devices](02-Describing-Hardware-Devices/) | &label 节点覆盖、GPIO LED、interrupt-parent、IRQ_TYPE | ✅ |
-| 03 | [Configuring Pin Multiplexing](03-Configuring-Pin-Muxing/) | 两级 pinctrl 结构、开漏 pad 配置、SION 位、/delete-property/ | ✅ |
-| 04 | [Using the I2C Bus](04-Using-the-I2C-Bus/) | i2c_driver、i2c_transfer burst read、WHO_AM_I 验证、Big-Endian | ✅ |
-| 05 | [Input Interface](05-Input-Interface/) | input_polled_dev、EV_ABS、input_report_abs/input_sync | ✅ |
+| 01 | [Writing Kernel Modules](01-writing-modules/) | Out-of-tree 编译、module_param、ktime_get_seconds、utsname()->release | ✅ |
+| 02 | [Describing Hardware Devices](02-Describing-Hardware-Devices/) | `&label` 节点覆盖、GPIO LED、interrupt-parent、IRQ_TYPE | ✅ |
+| 03 | [Configuring Pin Multiplexing](03-Configuring-Pin-Muxing/) | 两级 pinctrl 结构、开漏 pad 配置 `0x4001b8b1`、SION 位、/delete-property/ | ✅ |
+| 04 | [Using the I2C Bus](04-Using-the-I2C-Bus/) | i2c_driver probe/remove、i2c_transfer burst read、WHO_AM_I 验证、Big-Endian | ✅ |
+| 05 | [Input Interface](05-Input-Interface/) | input_polled_dev、EV_ABS、input_report_abs/input_sync、I2C→input 桥接 | ✅ |
 | 06 | [Accessing I/O Memory and Ports](06-Accessing-IO-Memory-and-Ports/) | ioremap、时钟框架、UART 寄存器、波特率公式、cpu_relax 超时保护 | ✅ |
 | 07 | [Output-only Misc Driver](07-Output-only-Misc-Driver/) | Misc 设备框架、file_operations、container_of、copy_from_user、ioctl | ✅ |
-| 08 | [Sleeping and Handling Interrupts](08-Sleeping-and-Handling-Interrupts/) | devm_request_irq、ISR、Ring Buffer、wait_event_interruptible | ✅ |
-| 09 | [Locking](09-Locking/) | spin_lock/spin_lock_irqsave、原子上下文规则、三明治原则 | ✅ |
+| 08 | [Sleeping and Handling Interrupts](08-Sleeping-and-Handling-Interrupts/) | devm_request_irq、ISR、Ring Buffer、wait_event_interruptible、UCR3_RXDMUXSEL | ✅ |
+| 09 | [Locking](09-Locking/) | spin_lock/spin_lock_irqsave、原子上下文规则、三明治原则、休眠 API 黑名单 | ✅ |
 | 10 | [DMA](10-DMA/) | dmaengine API、dma_map_resource、Completion 同步、EPROBE_DEFER、PIO 回退 | ✅ |
 
 ---
@@ -68,6 +65,464 @@ graph TD
 
 ---
 
+## 实验详解
+
+### 01 — Writing Modules（内核模块编写）
+
+**Out-of-tree 双遍 Makefile 原理：**
+
+```mermaid
+graph LR
+    A["make"] --> B["KERNELRELEASE = 空"]
+    B --> C["进入内核 Makefile:<br>make -C $(KDIR) M=$(PWD)"]
+    C --> D["KERNELRELEASE 已定义<br>执行 obj-m := xxx"]
+    D --> E["编译生成 .ko"]
+    E --> F["返回当前目录"]
+```
+
+- `module_param(whom, charp, 0644)` → `/sys/module/hello_version/parameters/whom`
+- `ktime_get_seconds()` + `time64_t` → 防止 Y2038 问题
+- `utsname()->release` → **运行时**获取内核版本，不用编译期宏
+
+---
+
+### 02 — Describing Hardware Devices（设备树节点覆盖）
+
+```mermaid
+graph TD
+    A["DTS 节点覆盖"] --> B["&label 引用已有节点"]
+    A --> C["&{/path} 按路径引用"]
+    A --> D["/delete-property/ 删除继承"]
+    B --> E["覆盖属性值"]
+    E --> G["&i2c1 → 添加 mpu6500@68"]
+    E --> H["&led0 → 修改 trigger"]
+```
+
+- `compatible = "invensense,mpu6500"` → 匹配内核内置驱动（无需自写驱动）
+- `interrupt-parent = <&gpio2>` → 指定 GPIO2 为中断控制器
+- `interrupts = <0 IRQ_TYPE_EDGE_RISING>` → GPIO2 第 0 号引脚，上升沿
+
+---
+
+### 03 — Configuring Pin Multiplexing（pinctrl 两级结构）
+
+**NXP pinctrl 两级结构（关键！）：**
+
+```mermaid
+graph TD
+    A["&iomuxc 容器节点"] --> B["container_node<br>（任意命名）"]
+    B --> C["pin_group<br>fsl,pins = <...>"]
+    C --> D["每项: 引脚宏 + pad 配置值"]
+    D --> E["例: MX6UL_PAD_CSI_PIXCLK__I2C1_SCL<br>0x4001b8b1"]
+```
+
+> **无 container_node 时，NXP pinctrl 驱动返回 `-EINVAL`**
+
+**`0x4001b8b1` pad 配置解构：**
+
+| 位段 | 值 | 含义 |
+|------|----|------|
+| bit 31 SION | 1 | Software Input On（强制输入） |
+| bit 14 ODE | 1 | **Open Drain Enable，I2C 必须** |
+| bit 12 PKE | 1 | Pull / Keeper Enable |
+| bit 11 PUE | 1 | Pull Selected（非 Keeper） |
+| bit 8 HYS | 1 | Hysteresis Enable |
+
+**开漏原理（I2C 线与逻辑）：**
+
+```
+总线高：所有设备释放（接上拉电阻）→ 线为高
+总线低：任一设备拉低 → 线为低
+ → 实现无竞争的多主仲裁
+```
+
+---
+
+### 04 — Using the I2C Bus（i2c_driver 与 burst read）
+
+**两消息 burst read 协议：**
+
+```mermaid
+sequenceDiagram
+    participant CPU
+    participant I2C as I2C 总线
+    participant MPU as MPU6500
+
+    CPU->>I2C: Msg[0]: 写 0x3B（寄存器地址）
+    Note over I2C: S ADDR W ACK 0x3B NACK
+    CPU->>I2C: Msg[1]: 读 6 字节（X_H/X_L/Y_H/Y_L/Z_H/Z_L）
+    Note over I2C: S ADDR R [data × 6] NACK P
+    I2C-->>CPU: Big-Endian 数据组装
+    Note over CPU: x = (data[0]<<8) | data[1]
+```
+
+**Big-Endian vs Little-Endian：**
+
+```
+MPU6500 输出: data[0]=0x01, data[1]=0xA3
+实际值:      0x01A3 = 419（高字节在前）
+
+若按小端解读: 0xA301 = 43009 ❌
+必须按:      (data[0] << 8) | data[1] ✓
+```
+
+---
+
+### 05 — Input Interface（input_polled_dev 桥接层）
+
+**四层抽象模型：**
+
+```mermaid
+graph TB
+    A["硬件层: I2C 寄存器<br>MPU6500_ACCEL_XOUT_H"] --> B["驱动层: i2c_transfer<br>burst read 6 字节"]
+    B --> C["input_polled_dev<br>poll 回调 20Hz"]
+    C --> D["input 子系统<br>EV_ABS 事件队列"]
+    D --> E["用户空间: evtest<br>/dev/input/event0"]
+```
+
+**EV_ABS 事件报告序列：**
+
+```
+input_report_abs(input, ABS_X, ax)  ─┐
+input_report_abs(input, ABS_Y, ay)  ─┤ 一帧事件
+input_report_abs(input, ABS_Z, az)  ─┘
+input_sync()                          帧结束标志
+```
+
+- `poll_interval = 50` → 50ms = 20Hz，内核工作队列调度
+- `input_set_abs_params(input, ABS_X, -32768, 32767, 8, 0)` → 定义轴范围
+
+---
+
+### 06 — Accessing I/O Memory and Ports（内存映射与时钟框架）
+
+```mermaid
+graph LR
+    A["物理地址<br>res->start + 0x40"] --> B["devm_ioremap_resource<br>request_mem_region + ioremap"]
+    B --> C["虚拟地址<br>dev->regs"]
+    C --> D["readl / writel<br>MMIO 访问"]
+    D --> E["UTXD 0x40 写数据<br>USR2 0x98 读状态"]
+```
+
+**波特率公式（i.MX6ULL 参考手册）：**
+
+```
+         per_clk
+BAUD = -----------
+       16 × (UBMR + 1)
+
+反推: UBMR = per_clk / 115200 - 1
+```
+
+**超时保护：**
+
+```c
+timeout = 1000000;
+while (!(readl(USR2) & TXFE) && --timeout)
+    cpu_relax();   // 提示编译器: 忙等，可优化寄存器重读
+```
+
+> 无超时保护时，TX FIFO 硬件卡死将导致内核永久挂起
+
+---
+
+### 07 — Output-only Misc Driver（container_of 与跨空间数据交换）
+
+**container_of 反向追溯：**
+
+```c
+// file->private_data 指向 miscdevice
+// miscdevice 是 my_uart_dev 的第一个成员
+// 故 container_of 计算结果就是 my_uart_dev 本身
+struct my_uart_dev *dev = container_of(file->private_data,
+                                         struct my_uart_dev, miscdev);
+```
+
+**put_user vs copy_to_user：**
+
+| API | 适用场景 | 重量 |
+|-----|---------|------|
+| `put_user(x, ptr)` | 单字节/单字写回 | 轻量 |
+| `get_user(x, ptr)` | 单字节/单字读取 | 轻量 |
+| `copy_to_user(dst, src, n)` | 任意长度 | 重量（可睡眠） |
+
+---
+
+### 08 — Sleeping and Handling Interrupts（ISR + Ring Buffer + Wait Queue）
+
+**生产者/消费者模型：**
+
+```mermaid
+graph TB
+    subgraph "ISR（生产者，中断上下文）"
+        ISR1["读 URXD 寄存器"]
+        ISR2["写 rx_buf[buf_wr]"]
+        ISR3["buf_wr = (buf_wr+1) % SIZE"]
+        ISR4["wake_up_interruptible"]
+    end
+    subgraph "read（消费者，进程上下文）"
+        READ1["wait_event_interruptible<br>缓冲区空则休眠"]
+        READ2["读 rx_buf[buf_rd]"]
+        READ3["buf_rd = (buf_rd+1) % SIZE"]
+        READ4["put_user 返回用户"]
+    end
+    ISR2 -->|共享 rx_buf| READ2
+    ISR4 -->|唤醒等待队列| READ1
+```
+
+**自旋锁保护表：**
+
+| 上下文 | 锁类型 | 保护对象 |
+|--------|--------|----------|
+| ISR | `spin_lock` | `rx_buf`, `buf_wr` |
+| `read` | `spin_lock_irqsave` | `rx_buf`, `buf_rd` |
+| `write` | `spin_lock_irqsave` | `tx_count` |
+
+**UCR3_RXDMUXSEL 硬件 quirk：**
+
+```
+i.MX6ULL 数据手册规定:
+bit 2 = 0: RX 信号来自内部测试回路（始终为 0）
+bit 2 = 1: RX 信号路由至外部引脚 ← 必须置 1
+
+症状: 中断触发，URXD 读回 0x00 → 漏设此位
+```
+
+---
+
+### 09 — Locking（自旋锁与三明治原则）
+
+```mermaid
+graph TD
+    A["持锁上下文"] --> B{"是中断上下文吗?"}
+    B -->|是| C["spin_lock <br>无需保存中断标志"]
+    B -->|否| D["spin_lock_irqsave <br>保存中断标志到 flags"]
+    C --> E["持锁期间: 只能访问共享数据"]
+    D --> E
+    E --> F["spin_unlock / spin_unlock_irqrestore"]
+```
+
+**为什么进程上下文必须用 irqsave：**
+
+```
+场景: 进程 A 获取锁（中断未禁止）
+  → 中断触发 → ISR 抢占进程 A
+  → ISR 尝试获取同一把锁
+  → ISR 不能休眠 → 自旋等待
+  → 进程 A 被 ISR 抢占无法运行
+  → 死锁！
+
+解决: spin_lock_irqsave 持锁时禁止本地 CPU 中断
+```
+
+**三明治原则（持锁期间禁止任何休眠操作）：**
+
+```mermaid
+graph LR
+    A["第一步: 分配内存<br>GFP_KERNEL"] --> B["第二步: 拷贝数据<br>copy_from_user"]
+    B --> C["第三步: 持锁访问<br>spin_lock / spin_unlock"]
+    C --> D["第四步: 拷贝结果<br>copy_to_user / put_user"]
+    D --> E["第五步: 释放内存<br>kfree"]
+    style C fill:#f96
+```
+
+> `copy_to/from_user` 可能休眠，持锁期间调用会触发 `CONFIG_DEBUG_ATOMIC_SLEEP` BUG
+
+**休眠 API 黑名单（持锁期间禁止）：**
+
+```
+kmalloc(GFP_KERNEL)     ← 可休眠，用 GFP_ATOMIC
+copy_to/from_user        ← 可休眠
+mutex_lock               ← 必然休眠
+wait_event_interruptible ← 必然休眠
+msleep                   ← 必然休眠
+```
+
+---
+
+### 10 — DMA（SDMA 引擎与 Cache 一致性）
+
+**DMA vs PIO 数据流对比：**
+
+```mermaid
+graph LR
+    subgraph "PIO 轮询模式"
+        P1["copy_from_user → kbuf"]
+        P2["for 循环"]
+        P3["读 USR2_TXFE"]
+        P4["写 UTXD"]
+        P5["CPU 逐字节干预"]
+    end
+    subgraph "DMA 模式"
+        D1["copy_from_user → tx_buf"]
+        D2["dma_map_single<br>Cache Clean"]
+        D3["dmaengine_submit"]
+        D4["SDMA 硬件<br>突发搬运 16 字节"]
+        D5["TX 完成中断<br>回调唤醒进程"]
+    end
+```
+
+**Cache 一致性问题（最核心）：**
+
+```
+CPU 写入 tx_buf
+    ↓
+数据在 CPU L1/L2 Cache 中（未写回 DDR）
+    ↓
+SDMA 控制器从 DDR 读取（读到的仍是旧数据）
+    ↓
+串口发出乱码 ← 数据不一致
+
+解决: dma_map_single
+    ↓
+强制将 Cache 中脏数据刷入 DDR
+    ↓
+SDMA 读取到正确数据 ✓
+```
+
+**映射铁律：**
+
+```
+copy_from_user → tx_buf
+    ↓
+dma_map_single（Cache Clean）
+    ↓
+DMA 传输中: CPU 禁止访问 tx_buf  ← 切勿碰数据！
+    ↓
+DMA 完成中断
+    ↓
+dma_unmap_single → kfree / 返回用户
+```
+
+**TXTL 水位线与 burst 关系：**
+
+| TXTL | FIFO 空位 | 触发时机 | 推荐 dst_maxburst |
+|------|-----------|----------|------------------|
+| 2 | 30 | 快空时才申请 | ≤ 30 |
+| **16** | **16** | **空一半时申请** | **≤ 16（最优）** |
+| 31 | 1 | 有空间即申请 | 只能 1 |
+
+> `TXTL = 16` + `dst_maxburst = 16` 使 SDMA 和 UART FIFO 完美匹配
+
+**tx_ongoing 防竞争：**
+
+```mermaid
+graph LR
+    A["write_dma 进程"] --> B["spin_lock_irqsave"]
+    B --> C{"tx_ongoing == true?"}
+    C -->|是| D["return -EBUSY"]
+    C -->|否| E["tx_ongoing = true"]
+    E --> F["DMA 传输"]
+    F --> G["完成中断 → tx_ongoing = false"]
+```
+
+**PIO Fallback 鲁棒性设计：**
+
+```mermaid
+graph TD
+    A["my_uart_init_dma"] --> B{"返回错误?"}
+    B -->|EPROBE_DEFER| C["return ret<br>内核稍后重试 probe"]
+    B -->|-ENODEV| D["dev_warn<br>初始化 PIO 模式"]
+    B -->|0 成功| E["miscdev.fops = DMA 版本"]
+    D --> F["miscdev.fops = PIO 版本"]
+    C --> G["probe 成功<br>设备注册完成"]
+    E --> G
+    F --> G
+```
+
+---
+
+## 知识关联总图
+
+```mermaid
+graph BT
+    subgraph "Layer0-硬件"
+        HW["i.MX6ULL SoC<br>MPU6500 加速度计"]
+    end
+    subgraph "Layer1-内核框架"
+        IOMUX["IOMUXC<br>引脚复用控制器"]
+        I2CCORE["I2C Core\n总线抽象层"]
+        INPUTSUB["Input 子系统\nEV_ABS 事件"]
+        PLATBUS["Platform Bus\n平台总线"]
+        DMAENG["DMA Engine\nSDMA 控制器"]
+    end
+    subgraph "Layer2-本人驱动代码"
+        MPU6500I2C["invensense_mpu6500_i2c.c<br>实验04"]
+        MPU6500IN["invensense_mpu6500_input.c<br>实验05"]
+        UART06["custom_uart.c probe<br>实验06"]
+        UART07["custom_uart.c misc<br>实验07"]
+        UART08["custom_uart.c ISR+WB<br>实验08"]
+        UART10["custom_uart_dma.c<br>实验10"]
+    end
+    subgraph "Layer3-设备树"
+        LED["&led0 心跳灯<br>实验02"]
+        MPU6500DTS["mpu6500@68<br>实验02/03"]
+        PINGRP["pinctrl_my_i2c1<br>实验03"]
+        UARTDTS["my,custom-uart4<br>实验06~10"]
+    end
+
+    HW --> IOMUX
+    HW --> I2CCORE
+    HW --> DMAENG
+    IOMUX --> PINCTRL["pinctrl 子系统"]
+    PINCTRL --> PINGRP
+    I2CCORE --> MPU6500I2C
+    I2CCORE --> MPU6500IN
+    INPUTSUB --> MPU6500IN
+    PLATBUS --> UART06
+    PLATBUS --> UART07
+    PLATBUS --> UART08
+    PLATBUS --> UART10
+    DMAENG --> UART10
+    PINGRP --> MPU6500DTS
+    MPU6500DTS --> MPU6500I2C
+    MPU6500DTS --> MPU6500IN
+```
+
+---
+
+## 快速参考
+
+### 自旋锁使用规则
+
+| 上下文 | 锁类型 | 可休眠？ |
+|--------|--------|----------|
+| ISR 内 | `spin_lock` | ❌ |
+| 进程上下文（与 ISR 共用资源） | `spin_lock_irqsave` | ❌ |
+| 进程上下文（无 ISR） | `spin_lock` | ❌ |
+
+### 中断与锁
+
+### i2cdetect 结果解读
+
+| 显示 | 含义 |
+|------|------|
+| `--` | 无设备响应此地址 |
+| `00`–`6F` | 确认存在 I2C 从机 |
+| `UU` | **有驱动占用**，设备正被内核驱动管理（正常） |
+| `XX` | 检测到设备但响应异常 |
+
+实验中 MPU6500 地址 `0x68` 正确注册后显示 `UU`。
+
+---
+
+## 踩坑经验汇总
+
+| # | 现象 | 原因 | 解决方案 |
+|---|------|------|----------|
+| 1 | `i2cdetect` 0x68 显示 `--` | `compatible` 不匹配 | 改为 `invensense,mpu6500` |
+| 2 | WHO_AM_I 返回 `0xFF` | I2C 总线未初始化或引脚复用错误 | 检查实验 03 pinctrl 配置 |
+| 3 | RX 始终收到 `0x00` | 缺少 `UCR3_RXDMUXSEL` | `reg \|= (1 << 2)` |
+| 4 | DMA 后串口乱码 | Cache 未刷，数据未到 DDR | `dma_map_single` 后禁止 CPU 访问 buffer |
+| 5 | 模块加载 oops | `IS_ERR` 未检查 | 所有指针 API 后加 `IS_ERR` 检查 |
+| 6 | 波特率偏差大 | `per_clk / 115200` 溢出 | 用 `unsigned long` 并先除后减 |
+| 7 | pinctrl 返回 `-EINVAL` | 缺少容器节点 | NXP 必须两级结构 |
+| 8 | DMA 通道申请失败 | SDMA 控制器未就绪 | 返回 `EPROBE_DEFER` 而非 `-ENODEV` |
+| 9 | 并发读写数据丢失 | 缺少自旋锁 | 对 `rx_buf`/`tx_count` 加锁 |
+| 10 | `container_of` 计算错误 | `private_data` 类型不匹配 | 确认字段指针的来源结构体 |
+
+---
+
 ## 目录结构
 
 ```
@@ -85,12 +540,9 @@ linux-kernel-driver-labs/
 ├── 08-Sleeping-and-Handling-Interrupts/
 ├── 09-Locking/
 ├── 10-DMA/
-├── Bootlin-实验总结.md   # 实验总结报告
 ├── LICENSE            # GPL-2.0
 └── .gitignore
 ```
-
----
 
 ## 构建方法
 
@@ -107,8 +559,6 @@ make
 make dtbs
 ```
 
----
-
 ## 硬件资源
 
 | 资源 | 说明 |
@@ -117,8 +567,6 @@ make dtbs
 | I2C1 (CSI pins) | 实验 03/04/05 的 MPU6500 加速度计总线 |
 | CSI pins (UART6 conflict) | 实验 03 将 I2C1 复用至此 |
 | SDMA | 实验 10 的 NXP SDMA 控制器 |
-
----
 
 ## License
 
