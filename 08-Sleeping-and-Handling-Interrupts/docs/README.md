@@ -48,7 +48,7 @@ graph LR
 
 ```mermaid
 graph TD
-    A["ISR: my_uart_isr"] --> B["spin_lock<br>中断已禁止调度"]
+    A["ISR: my_uart_isr"] --> B["spin_lock_irqsave<br>（硬中断里用 spin_lock 也够）"]
     B --> C["保护 rx_buf, buf_wr"]
     D["read: my_uart_read"] --> E["spin_lock_irqsave<br>保存中断标志"]
     E --> F["保护 rx_buf, buf_rd"]
@@ -72,8 +72,8 @@ graph LR
 ```mermaid
 graph TD
     A["UCR3 寄存器 bit 2"] --> B{"RXDMUXSEL = ?"}
-    B -->|0| C["RX 信号来自内部测试<br>始终读回 0x00"]
-    B -->|1| D["RX 信号路由至外部<br>正常接收数据"]
+    B -->|"0（复位值）"| C["外部 RX 进不到接收器<br>接收中断计数一直是 0"]
+    B -->|"1（手册要求）"| D["外部 RX 接到接收器<br>正常接收数据"]
 ```
 
 ## 代码说明
@@ -96,8 +96,8 @@ adb shell cat /proc/interrupts | grep serial
 
 | 设计点 | 说明 |
 |--------|------|
-| `spin_lock` in ISR | 中断已禁止调度，无需 irqsave |
+| ISR 里的锁 | 代码用的是 `spin_lock_irqsave`；硬中断里本地中断已关，用 `spin_lock` 也够 |
 | `spin_lock_irqsave` in read | 保存/恢复中断标志，防止死锁 |
 | `wait_event_interruptible` | 缓冲区空则休眠，ISR 唤醒后继续 |
-| `UCR3_RXDMUXSEL = 1` | 不置 1 外部 RX 信号进不来，始终读 0x00 |
+| `UCR3_RXDMUXSEL = 1` | 复位值是 0，不置 1 外部 RX 进不到接收器，回环时中断计数一直是 0 |
 | 三明治原则 | `copy_to/from_user` 和 `GFP_KERNEL` 必须在锁外 |

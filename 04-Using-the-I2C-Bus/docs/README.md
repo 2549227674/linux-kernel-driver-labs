@@ -32,15 +32,18 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant Host as 主机 (I2C 适配器)
-    participant Bus as I2C 总线
     participant MPU as MPU6500
 
-    Host->>Bus: S ADDR+W ACK
-    Host->>MPU: 0x3B (ACCEL_XOUT_H 寄存器地址) NACK
-    Bus->>MPU: 停止信号
-    Host->>Bus: S ADDR+R ACK
-    MPU-->>Bus: AXH → AXL → AYH → AYL → AZH → AZL (6 字节)
-    Host-->>Bus: 停止信号 (NACK)
+    Host->>MPU: msg[0]：S，0x68+W
+    MPU-->>Host: ACK
+    Host->>MPU: 0x3B（ACCEL_XOUT_H 寄存器地址）
+    MPU-->>Host: ACK
+    Note over Host,MPU: 不发停止，直接重复起始（Sr），总线不释放
+    Host->>MPU: msg[1]：Sr，0x68+R
+    MPU-->>Host: ACK
+    MPU-->>Host: AXH、AXL、AYH、AYL、AZH（主机每个字节回 ACK）
+    MPU-->>Host: AZL
+    Host->>MPU: NACK（最后一个字节不应答），停止 P
     Note over Host: 数据组装:<br>ax = (data[0]<<8) | data[1]
 ```
 

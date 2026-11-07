@@ -106,8 +106,8 @@ adb shell reboot
 # 重启后验证 LED（心跳灯闪烁）
 # 验证 MPU6500 被内核驱动识别
 adb shell dmesg | grep -i mpu
-adb shell i2cdetect -y 1
-# 预期：0x68 处显示 inv-mpu6050 驱动名或 "UU"（被占用）
+adb shell i2cdetect -y 0
+# 预期：0x68 处显示 "UU"（被 inv-mpu6050 驱动占用）；这块板子上总线 0 就是 I2C1
 ```
 
 ## 关键设计
@@ -121,8 +121,8 @@ adb shell i2cdetect -y 1
 
 ```mermaid
 graph LR
-    A["i2cdetect -y 1"] --> B{"0x68 显示?"}
+    A["i2cdetect -y 0"] --> B{"0x68 显示?"}
     B -->|"UU"| C["驱动已绑定<br>正常"]
-    B -->|"--"| D["设备树/驱动未就绪"]
-    B -->|"XX"| E["I2C 总线异常"]
+    B -->|"68"| E["设备应答了，但没有驱动绑定<br>看 dmesg 里的 probe 报错"]
+    B -->|"--"| D["没有应答<br>查 dtb、引脚复用、接线"]
 ```

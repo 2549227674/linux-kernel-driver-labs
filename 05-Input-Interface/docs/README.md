@@ -91,7 +91,7 @@ adb shell evtest /dev/input/eventX
 | 设计点 | 说明 |
 |--------|------|
 | `input_polled_dev` | 内核工作队列定期调度 poll 回调，无需自己管理定时器 |
-| `poll_interval = 50` | 50ms 间隔 = 20Hz 采样率 |
+| `poll_interval = 50` | 配置值 50 ms（20 Hz）；按 evtest 截图里的时间戳算，实际约 60 ms 一帧（推算） |
 | `EV_ABS` + `input_set_abs_params` | 声明绝对坐标事件类型和轴范围 (-32768~32767) |
 | `input_sync` | 每帧事件结束标志，通知用户空间数据就绪 |
 | `devm_input_allocate_polled_device` | 设备卸载时自动释放，remove 只需休眠硬件 |

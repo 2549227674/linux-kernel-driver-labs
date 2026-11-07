@@ -2,7 +2,7 @@
 
 ## 实验目标
 
-将 UART TX 轮询发送替换为 NXP SDMA 引擎 DMA 发送，实现零拷贝、高效率的 UART 数据传输，同时保留 ISR + Ring Buffer + Wait Queue 的 RX 路径。
+将 UART TX 轮询发送替换为 NXP SDMA 引擎 DMA 发送，由 SDMA 搬运数据、CPU 在传输期间睡眠（用户数据仍先拷到内核缓冲，不是零拷贝），同时保留 ISR + Ring Buffer + Wait Queue 的 RX 路径。
 
 ## 知识点
 
@@ -78,12 +78,11 @@ graph TD
 graph TD
     A["write_dma 进程"] --> B["spin_lock_irqsave"]
     B --> C{"tx_ongoing == true?"}
-    C -->|是| D["spin_unlock<br>return -EBUSY"]
-    C -->|否| E["tx_ongoing = true"]
-    E --> F["DMA 传输"]
-    F --> G["完成中断"]
-    G --> H["tx_ongoing = false"]
-    H --> I["spin_unlock_irqrestore"]
+    C -->|是| D["spin_unlock_irqrestore<br>return -EBUSY"]
+    C -->|否| E["tx_ongoing = true<br>spin_unlock_irqrestore"]
+    E --> F["DMA 传输<br>wait_for_completion 睡眠"]
+    F --> G["回调 complete，进程醒来"]
+    G --> H["spin_lock_irqsave<br>tx_ongoing = false<br>spin_unlock_irqrestore"]
 ```
 
 ### PIO Fallback 鲁棒性
@@ -99,11 +98,13 @@ graph TD
 
 ### TXTL 水位线与 dst_maxburst 关系
 
-| TXTL | FIFO 空位 | 触发时机 | 推荐 dst_maxburst |
+| TXTL | FIFO 空位 | 触发时机 | dst_maxburst 上限 |
 |------|-----------|----------|------------------|
 | 2 | 30 | 快空时才申请 | ≤ 30 |
-| **16** | **16** | **空一半时申请** | **≤ 16（最优）** |
+| 16 | 16 | 空一半时申请 | ≤ 16 |
 | 31 | 1 | 有空间即申请 | 只能 1 |
+
+代码没写 TXTL，用的是复位值 2（手册值，没在板上读过），请求时约 30 个空位，`dst_maxburst = 16` 放得下。
 
 ## 代码说明
 
@@ -132,7 +133,7 @@ adb shell cat /proc/interrupts | grep serial
 |--------|------|
 | `dma_map_resource` | UART TX FIFO 物理地址 → DMA 可访问的总线地址 |
 | `EPROBE_DEFER` | SDMA 未就绪时返回此错误，内核稍后重新探测 |
-| `tx_ongoing + spin_lock` | 防止应用层同时调用 DMA 和 PIO write 竞争 |
+| `tx_ongoing + spin_lock` | 缓冲和通道只有一份，第二个进程同时 write 时返回 `-EBUSY`；锁只保护标志的检查和设置，不跨过传输 |
 | `reinit_completion` | 每次 DMA 前重置 completion，确保 wait_for_completion 正确等待 |
-| `UCR1_TXDMAEN = (1 << 3)` | 写入后再等 completion，避免 TX 中断在回调前到达 |
-| `TXTL=16 + burst=16` | SDMA 和 UART FIFO 完美匹配，避免饥饿或溢出 |
+| `UCR1_TXDMAEN = (1 << 3)` | 对照手册是 bit 3（资料误写成 bit 14，那是 ADBR）；置位后 FIFO 低于水位 UART 就向 SDMA 发请求，回调里清掉 |
+| `dst_maxburst = 16` | 代码没写 TXTL，用复位值 2，请求时 FIFO 约有 30 个空位，burst 16 不会溢出 |
