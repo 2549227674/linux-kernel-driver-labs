@@ -95,7 +95,7 @@ graph TD
 
 | 区域 | 保护对象 | 锁类型 |
 |------|----------|--------|
-| `my_uart_isr` | `rx_buf`, `buf_wr` | `spin_lock` |
+| `my_uart_isr` | `rx_buf`, `buf_wr` | `spin_lock_irqsave`（硬中断里用 `spin_lock` 也够） |
 | `my_uart_read` | `rx_buf`, `buf_rd` | `spin_lock_irqsave` |
 | `my_uart_write` | `tx_count` | `spin_lock_irqsave` |
 | `my_uart_ioctl` | `tx_count` | `spin_lock_irqsave` |
@@ -106,5 +106,5 @@ graph TD
 |------|------|
 | 持锁期间不分配内存 | `GFP_KERNEL` 分配可能休眠，违反原子性 |
 | 持锁期间不拷贝数据 | `copy_to_user` / `copy_from_user` 可能休眠 |
-| 中断上下文用 `spin_lock` | 中断已禁止，无需再保存中断状态 |
+| 中断上下文可以用 `spin_lock` | 硬中断里本地中断已关；本驱动的 ISR 写的是 `spin_lock_irqsave`，也对 |
 | 进程上下文用 `spin_lock_irqsave` | 防止进程被中断打断后，中断又去竞争同一把锁（死锁） |

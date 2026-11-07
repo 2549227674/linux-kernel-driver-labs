@@ -42,14 +42,19 @@ graph TD
 
 ### 0x4001b8b1 Pad 配置位解构
 
-```mermaid
-graph LR
-    A["bit[31]=1<br>SION"] --> B["Software Input On<br>强制作为输入"]
-    A1["bit[14]=1<br>ODE"] --> C["Open Drain Enable<br>I2C 必须"]
-    A2["bit[12]=1<br>PKE"] --> D["Pull / Keeper Enable"]
-    A3["bit[11]=1<br>PUE"] --> E["Pull Selected<br>而非 Keeper"]
-    A4["bit[8]=1<br>HYS"] --> F["Hysteresis Enable"]
-```
+NXP 给 I2C 的配置 `0x4001b8b0` 再打开快速 slew：
+
+| 位 | 值 | 含义 |
+|---|---|---|
+| 30 | 1 | SION（Software Input On），不在 pad 寄存器里，pinctrl 驱动把它写进 mux 寄存器 |
+| 16 | 1 | HYS，输入迟滞 |
+| 15–14 | 10 | PUS，100K 上拉 |
+| 13 | 1 | PUE，选上拉而不是 keeper |
+| 12 | 1 | PKE，打开上拉或 keeper |
+| 11 | 1 | ODE，开漏，I2C 必须 |
+| 7–6 | 10 | SPEED，中速 |
+| 5–3 | 110 | DSE，驱动强度 |
+| 0 | 1 | SRE，快速 slew |
 
 ### I2C 开漏+上拉原理
 
@@ -115,8 +120,8 @@ adb push arch/arm/boot/dts/imx6ull-100ask-custom.dtb /boot/
 adb shell reboot
 
 # 验证 I2C1 在 CSI 引脚上工作
-adb shell i2cdetect -y 1
-# 预期：0x68 处显示 "UU"（内核 mpu6050 驱动已占用）
+adb shell i2cdetect -y 0
+# 预期：0x68 处显示 "UU"（内核 mpu6050 驱动已占用），0x1e（板载 AP3216C）不见了
 
 # 推送并运行 IIO 监控脚本
 adb push mpu_monitor.sh /root/
